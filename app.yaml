@@ -1,0 +1,8 @@
+runtime: python310
+entrypoint: gunicorn -b :$PORT main:app
+
+env_variables:
+  INSTANCE_CONNECTION_NAME: "sixth-syntax-479611-m4:asia-east2:trello-db-instance"
+  DB_USER: "root"
+  DB_PASS: "dungthoi123"
+  DB_NAME: "TrelloDB"

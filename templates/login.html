@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f5f7; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 100%; max-width: 350px; text-align: center; }
+        h2 { color: #172b4d; margin-bottom: 20px; }
+        select, button { width: 100%; padding: 12px; margin-top: 15px; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        select { border: 2px solid #dfe1e6; }
+        button { background: #0079bf; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:hover { background: #026aa7; }
+        .alert { color: red; margin-bottom: 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>🚀 Trello </h2>
+        
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}<div class="alert">{{ messages[0] }}</div>{% endif %}
+        {% endwith %}
+
+        <form method="POST" action="/login">
+            <label style="display:block; text-align:left; color:#5e6c84; font-weight:bold; margin-bottom:5px;">Select User to Login:</label>
+            <select name="user_id">
+                {% for user in users %}
+                    <option value="{{ user.UserID }}">{{ user.FirstName }} {{ user.LastName }} ({{ user.Email }})</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Log In</button>
+        </form>
+    </div>
+</body>
+</html>

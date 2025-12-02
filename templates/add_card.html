@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Card</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f5f7; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input, select, textarea { width: 100%; padding: 10px; margin: 5px 0 15px; border: 2px solid #dfe1e6; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #0079bf; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .cancel { display: block; text-align: center; margin-top: 10px; color: #5e6c84; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 style="text-align: center; color: #172b4d;">Create New Card</h2>
+        <form method="POST" action="/add">
+            <input type="hidden" name="board_id" value="{{ board_id }}">
+
+            <label>Title *</label>
+            <input type="text" name="title" required>
+
+            <label>List</label>
+            <select name="list_id">
+                {% for list in lists %}
+                    <option value="{{ list.ListID }}">{{ list.Title }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Description</label>
+            <textarea name="description" rows="3"></textarea>
+
+            <div style="display: flex; gap: 10px;">
+                <div style="flex:1"><label>Priority</label>
+                <select name="priority">
+                    <option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option><option value="Low">Low</option>
+                </select></div>
+                
+                <div style="flex:1"><label>Assign (Ctrl+Click)</label>
+                <select name="assignee_ids" multiple style="height: 100px;">
+                    {% for user in users %}
+                        <option value="{{ user.UserID }}">{{ user.FirstName }} {{ user.LastName }}</option>
+                    {% endfor %}
+                </select></div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <div style="flex:1"><label>Start Date</label><input type="date" name="start_date"></div>
+                <div style="flex:1"><label>Due Date</label><input type="date" name="due_date"></div>
+            </div>
+
+            <button type="submit">Add Card</button>
+            <a href="/" class="cancel">Cancel</a>
+        </form>
+    </div>
+</body>
+</html>

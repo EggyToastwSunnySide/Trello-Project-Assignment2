@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TrelloDB Demo</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px;}
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        .error { color: red; background: #fee; padding: 10px; border: 1px solid red; }
+    </style>
+</head>
+<body>
+    <h1>Danh sách Users (Kết nối từ Cloud SQL)</h1>
+
+    {% if error %}
+        <div class="error">
+            <h3>Lỗi kết nối:</h3>
+            <p>{{ error }}</p>
+        </div>
+    {% endif %}
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Tên</th>
+            <th>Email</th>
+            <th>Trạng thái</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.UserID }}</td>
+            <td>{{ user.FirstName }} {{ user.LastName }}</td>
+            <td>{{ user.Email }}</td>
+            <td>{{ user.Status }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
