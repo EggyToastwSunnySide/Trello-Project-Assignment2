@@ -140,7 +140,7 @@ def add_card():
             return redirect(url_for('trello_board', board_id=board_id))
         except Exception as e:
             msg = str(e)
-            if "reached its CardLimit" in msg: flash("⛔ LỖI: Cột này đã đầy!", "error")
+            if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded!", "error")
             else: flash(f"Lỗi: {msg}", "error")
             return redirect(url_for('trello_board', board_id=board_id))
 
@@ -208,7 +208,7 @@ def edit_card(card_id):
             return redirect(url_for('trello_board', board_id=redirect_board_id))
         except Exception as e:
             msg = str(e)
-            if "reached its CardLimit" in msg: flash("⛔ LỖI: Cột đích đã đầy!", "error")
+            if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded!", "error")
             else: flash(f"Lỗi: {msg}", "error")
             return redirect(url_for('trello_board'))
 
