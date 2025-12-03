@@ -2,12 +2,11 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import sqlalchemy
 from sqlalchemy import text
-from collections import defaultdict
+from collections import OrderedDict
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_trello_app'
 
-# --- KẾT NỐI DB ---
 def connect_unix_socket():
     db_user = os.environ["DB_USER"]
     db_pass = os.environ["DB_PASS"]
@@ -30,22 +29,19 @@ db = connect_unix_socket()
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user_id = request.form['user_id']
-        session['user_id'] = user_id
+        session['user_id'] = request.form['user_id']
         try:
             with db.connect() as conn:
-                res = conn.execute(text("SELECT FirstName FROM Users WHERE UserID = :uid"), {"uid": user_id})
+                res = conn.execute(text("SELECT FirstName FROM Users WHERE UserID = :uid"), {"uid": request.form['user_id']})
                 user = res.fetchone()
                 if user: session['user_name'] = user[0]
         except: pass
         return redirect(url_for('trello_board'))
-
     try:
         with db.connect() as conn:
             users = conn.execute(text("SELECT UserID, FirstName, LastName, Email FROM Users")).fetchall()
         return render_template('login.html', users=users)
-    except Exception as e:
-        return f"DB Error: {e}"
+    except Exception as e: return f"DB Error: {e}"
 
 @app.route('/logout')
 def logout():
@@ -58,161 +54,193 @@ def trello_board():
     if 'user_id' not in session: return redirect(url_for('login'))
     
     board_id = request.args.get('board_id', default=3, type=int)
-    lists_data = defaultdict(list)
+    
+    # Use OrderedDict to maintain list position
+    lists_data = OrderedDict()
     all_boards = []
     current_board_name = "Unknown"
     
-    # Biến tính toán tiến độ toàn bảng
-    total_cards = 0
-    completed_cards = 0
-    board_progress = 0
+    total_cards = 0; completed_cards = 0; board_progress = 0
     
     try:
         with db.connect() as conn:
+            # 1. Get Board Info
             all_boards = conn.execute(text("SELECT BoardID, Name FROM Board")).fetchall()
             name_res = conn.execute(text("SELECT Name FROM Board WHERE BoardID = :bid"), {"bid": board_id}).fetchone()
             if name_res: current_board_name = name_res[0]
 
-            # completed=None để lấy tất cả
+            # 2. Get LISTS Structure (To have IDs for Edit/Delete and show empty lists)
+            lists_res = conn.execute(text("SELECT ListID, Title, CardLimit FROM Lists WHERE BoardID = :bid ORDER BY Position"), {"bid": board_id}).fetchall()
+            
+            # Initialize dictionary keys with (ID, Title, Limit)
+            for lst in lists_res:
+                lists_data[(lst.ListID, lst.Title, lst.CardLimit)] = []
+
+            # 3. Get CARDS
             query = text("CALL SP_Report_BoardDetails(:bid, :completed)")
             result = conn.execute(query, {"bid": board_id, "completed": None})
             rows = result.fetchall()
 
             for row in rows:
-                list_name = row[0]
-                is_done = row[7] if len(row) > 7 else 0
+                # row[0] is ListName. Find matching key in lists_data
+                target_key = None
+                for key in lists_data.keys():
+                    if key[1] == row[0]: # key[1] is Title
+                        target_key = key
+                        break
                 
-                total_cards += 1
-                if is_done: completed_cards += 1
-                
-                card_data = {
-                    "id": row[1], "title": row[2], "priority": row[3],
-                    "due_date": row[4], "assignees": row[5],
-                    "progress": row[6] if len(row) > 6 else 0,
-                    "is_completed": is_done
-                }
-                lists_data[list_name].append(card_data)
+                if target_key:
+                    is_done = row[7] if len(row) > 7 else 0
+                    total_cards += 1
+                    if is_done: completed_cards += 1
+                    
+                    card_data = {
+                        "id": row[1], "title": row[2], "priority": row[3],
+                        "due_date": row[4], "assignees": row[5],
+                        "progress": row[6] if len(row) > 6 else 0,
+                        "is_completed": is_done
+                    }
+                    lists_data[target_key].append(card_data)
             
-            if total_cards > 0:
-                board_progress = int((completed_cards / total_cards) * 100)
+            if total_cards > 0: board_progress = int((completed_cards / total_cards) * 100)
 
     except Exception as e:
-        flash(f"Lỗi kết nối: {str(e)}", "error")
+        flash(f"Error {str(e)}", "error")
 
     return render_template('board.html', 
                            lists=lists_data, all_boards=all_boards, 
                            current_board_id=board_id, current_board_name=current_board_name,
-                           user_name=session.get('user_name'),
-                           board_progress=board_progress)
+                           user_name=session.get('user_name'), board_progress=board_progress)
 
-# --- THÊM THẺ (MULTI-ASSIGN) ---
+# --- NEW: LIST MANAGEMENT ---
+@app.route('/create_list', methods=['POST'])
+def create_list():
+    board_id = request.form['board_id']
+    title = request.form['title']
+    try:
+        with db.connect() as conn:
+            pos_res = conn.execute(text("SELECT MAX(Position) FROM Lists WHERE BoardID = :bid"), {"bid": board_id}).fetchone()
+            new_pos = (pos_res[0] or 0) + 1
+            conn.execute(text("INSERT INTO Lists (BoardID, Title, Position, CardLimit) VALUES (:bid, :title, :pos, 0)"), 
+                         {"bid": board_id, "title": title, "pos": new_pos})
+            conn.commit()
+        flash("List added successfully!", "success")
+    except Exception as e: flash(f"Error {e}", "error")
+    return redirect(url_for('trello_board', board_id=board_id))
+
+@app.route('/delete_list/<int:list_id>', methods=['POST'])
+def delete_list(list_id):
+    board_id = request.args.get('board_id')
+    try:
+        with db.connect() as conn:
+            conn.execute(text("DELETE FROM Lists WHERE ListID = :lid"), {"lid": list_id})
+            conn.commit()
+        flash("List deleted successfully!", "success")
+    except Exception as e: flash(f"Error {e}", "error")
+    return redirect(url_for('trello_board', board_id=board_id))
+
+@app.route('/edit_list/<int:list_id>', methods=['POST'])
+def edit_list(list_id):
+    board_id = request.form['board_id']
+    new_title = request.form['title']
+    try:
+        with db.connect() as conn:
+            conn.execute(text("UPDATE Lists SET Title = :title WHERE ListID = :lid"), {"title": new_title, "lid": list_id})
+            conn.commit()
+        flash("List updated successfully!", "success")
+    except Exception as e: flash(f"Error {e}", "error")
+    return redirect(url_for('trello_board', board_id=board_id))
+
+# --- NEW: BOARD MANAGEMENT ---
+@app.route('/edit_board/<int:board_id>', methods=['POST'])
+def edit_board(board_id):
+    new_name = request.form['name']
+    try:
+        with db.connect() as conn:
+            conn.execute(text("UPDATE Board SET Name = :name WHERE BoardID = :bid"), {"name": new_name, "bid": board_id})
+            conn.commit()
+        flash("Board updated successfully!", "success")
+    except Exception as e: flash(f"Error {e}", "error")
+    return redirect(url_for('trello_board', board_id=board_id))
+
+@app.route('/delete_board/<int:board_id>', methods=['POST'])
+def delete_board(board_id):
+    try:
+        with db.connect() as conn:
+            conn.execute(text("DELETE FROM Board WHERE BoardID = :bid"), {"bid": board_id})
+            conn.commit()
+        flash("Board deleted successfully!", "success")
+        return redirect(url_for('trello_board')) 
+    except Exception as e: 
+        flash(f"Error {e}", "error")
+        return redirect(url_for('trello_board', board_id=board_id))
+
+# --- CRUD THẺ (YOUR ORIGINAL LOGIC & MESSAGES) ---
 @app.route('/add', methods=['GET', 'POST'])
 def add_card():
     if 'user_id' not in session: return redirect(url_for('login'))
     board_id = request.args.get('board_id', default=3, type=int)
-    
     if request.method == 'GET':
         with db.connect() as conn:
             lists = conn.execute(text("SELECT ListID, Title FROM Lists WHERE BoardID = :bid ORDER BY Position"), {"bid": board_id}).fetchall()
             users = conn.execute(text("SELECT UserID, FirstName, LastName FROM Users")).fetchall()
         return render_template('add_card.html', lists=lists, users=users, board_id=board_id)
-    
     elif request.method == 'POST':
         try:
-            # Lấy danh sách ID người được giao (List)
             assignee_ids = request.form.getlist('assignee_ids')
-            
             with db.connect() as conn:
                 res = conn.execute(text("CALL SP_Card_Insert(:lid, :uid, :title, :desc, :prio, :start, :due)"), {
                     "lid": request.form['list_id'], "uid": session['user_id'],
                     "title": request.form['title'], "desc": request.form['description'], 
-                    "prio": request.form['priority'],
-                    "start": request.form['start_date'] or None, "due": request.form['due_date'] or None
+                    "prio": request.form['priority'], "start": request.form['start_date'] or None, "due": request.form['due_date'] or None
                 })
                 new_cid = res.fetchone()[1]
-                
-                # Vòng lặp insert nhiều người
                 for uid in assignee_ids:
-                    conn.execute(text("INSERT INTO Card_Member (CardID, UserID, Role) VALUES (:cid, :uid, 'Assignee')"), 
-                                 {"cid": new_cid, "uid": uid})
+                    conn.execute(text("INSERT INTO Card_Member (CardID, UserID, Role) VALUES (:cid, :uid, 'Assignee')"), {"cid": new_cid, "uid": uid})
                 conn.commit()
-            flash("Thêm thẻ thành công!", "success")
+            flash("Card added successfully!", "success")
             return redirect(url_for('trello_board', board_id=board_id))
         except Exception as e:
             msg = str(e)
-            if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded!", "error")
-            else: flash(f"Lỗi: {msg}", "error")
+            if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded in list!", "error")
+            else: flash(f"Error {msg}", "error")
             return redirect(url_for('trello_board', board_id=board_id))
 
-# --- SỬA THẺ (MULTI-ASSIGN) ---
 @app.route('/edit_card/<int:card_id>', methods=['GET', 'POST'])
 def edit_card(card_id):
     if 'user_id' not in session: return redirect(url_for('login'))
-    
     if request.method == 'GET':
         try:
             with db.connect() as conn:
-                # 1. Thông tin thẻ
                 card = conn.execute(text("SELECT * FROM Card WHERE CardID = :cid"), {"cid": card_id}).fetchone()
-                
-                # 2. Board ID
                 list_info = conn.execute(text("SELECT BoardID FROM Lists WHERE ListID = :lid"), {"lid": card.ListID}).fetchone()
                 board_id = list_info[0] if list_info else 3
-
-                # 3. Lists & Users
                 users = conn.execute(text("SELECT UserID, FirstName, LastName FROM Users")).fetchall()
                 lists = conn.execute(text("SELECT ListID, Title FROM Lists WHERE BoardID = :bid ORDER BY Position"), {"bid": board_id}).fetchall()
-                
-                # 4. Lấy danh sách ID người đang được gán (để highlight)
                 assignees_res = conn.execute(text("SELECT UserID FROM Card_Member WHERE CardID = :cid"), {"cid": card_id}).fetchall()
                 current_assignee_ids = [row[0] for row in assignees_res]
-
-                card_dict = {
-                    "CardID": card.CardID, "Title": card.Title, "Description": card.Description,
-                    "Priority": card.Priority, "IsCompleted": card.IsCompleted, 
-                    "ListID": card.ListID, "DueDate": card.DueDate,
-                    "AssigneeIDs": current_assignee_ids, # List ID [1, 2]
-                    "BoardID": board_id
-                }
+                card_dict = {"CardID": card.CardID, "Title": card.Title, "Description": card.Description, "Priority": card.Priority, "IsCompleted": card.IsCompleted, "ListID": card.ListID, "DueDate": card.DueDate, "AssigneeIDs": current_assignee_ids, "BoardID": board_id}
                 return render_template('edit_card.html', card=card_dict, users=users, lists=lists)
-        except Exception as e:
-            flash(f"Lỗi tải thẻ: {e}", "error")
-            return redirect(url_for('trello_board'))
-
+        except: return redirect(url_for('trello_board'))
     elif request.method == 'POST':
         try:
             redirect_board_id = request.form.get('board_id', 3)
             is_completed = True if request.form.get('is_completed') else False
-            assignee_ids = request.form.getlist('assignee_ids') # Lấy danh sách mới
-
+            assignee_ids = request.form.getlist('assignee_ids')
             with db.connect() as conn:
-                # 1. Update qua SP
-                conn.execute(text("CALL SP_Card_Update(:cid, :title, :prio, :done)"), {
-                    "cid": card_id, "title": request.form['title'],
-                    "prio": request.form['priority'], "done": is_completed
-                })
-                # 2. Update thủ công các trường khác
-                conn.execute(text("UPDATE Card SET Description = :desc, ListID = :lid, DueDate = :due WHERE CardID = :cid"), {
-                    "desc": request.form['description'], "lid": request.form['list_id'],
-                    "due": request.form['due_date'] or None, "cid": card_id
-                })
-
-                # 3. Cập nhật người làm (Xóa hết cũ -> Thêm mới)
+                conn.execute(text("CALL SP_Card_Update(:cid, :title, :prio, :done)"), {"cid": card_id, "title": request.form['title'], "prio": request.form['priority'], "done": is_completed})
+                conn.execute(text("UPDATE Card SET Description = :desc, ListID = :lid, DueDate = :due WHERE CardID = :cid"), {"desc": request.form['description'], "lid": request.form['list_id'], "due": request.form['due_date'] or None, "cid": card_id})
                 conn.execute(text("DELETE FROM Card_Member WHERE CardID = :cid"), {"cid": card_id})
                 for uid in assignee_ids:
-                    conn.execute(text("INSERT INTO Card_Member (CardID, UserID, Role) VALUES (:cid, :uid, 'Assignee')"), 
-                                 {"cid": card_id, "uid": uid})
-                
+                    conn.execute(text("INSERT INTO Card_Member (CardID, UserID, Role) VALUES (:cid, :uid, 'Assignee')"), {"cid": card_id, "uid": uid})
                 conn.commit()
-            flash("Cập nhật thẻ thành công!", "success")
+            flash("Card updated successfully!", "success")
             return redirect(url_for('trello_board', board_id=redirect_board_id))
         except Exception as e:
-            msg = str(e)
-            if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded!", "error")
-            else: flash(f"Lỗi: {msg}", "error")
+            if "reached its CardLimit" in str(e): flash("⛔ Error: Card count exceeded in list!", "error")
+            else: flash(f"Error {e}", "error")
             return redirect(url_for('trello_board'))
 
-# --- DELETE & CREATE BOARD (GIỮ NGUYÊN) ---
 @app.route('/delete_card/<int:card_id>', methods=['POST'])
 def delete_card(card_id):
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -221,8 +249,11 @@ def delete_card(card_id):
         with db.connect() as conn:
             conn.execute(text("CALL SP_Card_Delete(:cid)"), {"cid": card_id})
             conn.commit()
-        flash("Đã xóa thẻ.", "success")
-    except Exception as e: flash(f"Lỗi: {e}", "error")
+        flash("Card deleted successfully!", "success")
+    except Exception as e:
+        msg = str(e)
+        if "Cannot delete a COMPLETED card" in msg: flash("⛔ Error: Cannot delete a COMPLETED card!", "error")
+        else: flash(f"Error {msg}", "error")
     return redirect(url_for('trello_board', board_id=board_id))
 
 @app.route('/create_board', methods=['GET', 'POST'])
@@ -232,8 +263,7 @@ def create_board():
     elif request.method == 'POST':
         try:
             with db.connect() as conn:
-                conn.execute(text("INSERT INTO Board (WorkspaceID, CreatedByUserID, Name, Visibility) VALUES (1, :uid, :name, :vis)"), 
-                             {"uid": session['user_id'], "name": request.form['name'], "vis": request.form['visibility']})
+                conn.execute(text("INSERT INTO Board (WorkspaceID, CreatedByUserID, Name, Visibility) VALUES (1, :uid, :name, :vis)"), {"uid": session['user_id'], "name": request.form['name'], "vis": request.form['visibility']})
                 new_bid = conn.execute(text("SELECT LAST_INSERT_ID()")).fetchone()[0]
                 conn.execute(text("INSERT INTO Lists (BoardID, Title, Position, CardLimit) VALUES (:bid, 'To Do', 1, 0), (:bid, 'Doing', 2, 5), (:bid, 'Done', 3, 0)"), {"bid": new_bid})
                 conn.commit()

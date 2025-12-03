@@ -6,71 +6,151 @@
     <title>{{ current_board_name }}</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #0079bf; margin: 0; padding: 0; color: #172b4d; display: flex; flex-direction: column; height: 100vh; }
-        .navbar { background-color: rgba(0,0,0,0.25); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; color: white; flex-shrink: 0; backdrop-filter: blur(4px); }
-        .board-select { padding: 6px; border-radius: 3px; border: none; background: rgba(255,255,255,0.2); color: white; cursor: pointer; }
-        .board-select option { color: black; }
-        .new-board-btn, .btn-nav { background: rgba(255,255,255,0.2); color: white; text-decoration: none; padding: 6px 12px; border-radius: 3px; font-size: 14px; margin-left: 10px; }
         
-        /* THANH TIẾN ĐỘ TOÀN BẢNG (MỚI) */
-        .board-stats { background: rgba(0,0,0,0.1); padding: 10px 20px; color: white; display: flex; align-items: center; gap: 15px; }
-        .main-progress-bar { width: 200px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 5px; overflow: hidden; }
+        /* Navbar */
+        .navbar { background-color: rgba(0,0,0,0.25); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; color: white; flex-shrink: 0; backdrop-filter: blur(4px); }
+        .nav-left { display: flex; align-items: center; gap: 10px; }
+        
+        /* Board Title Editable */
+        .board-title-form input { background: transparent; border: none; color: white; font-size: 18px; font-weight: bold; width: 200px; cursor: pointer; }
+        .board-title-form input:focus { background: white; color: black; outline: none; padding: 5px; cursor: text; border-radius: 3px; }
+        
+        .board-select { padding: 6px; border-radius: 3px; border: none; background-color: rgba(255,255,255,0.2); color: white; cursor: pointer; font-size: 14px; }
+        .board-select option { color: #172b4d; background: white; }
+        
+        .btn-nav, .btn-del-board { background-color: rgba(255,255,255,0.2); color: white; text-decoration: none; padding: 6px 12px; border-radius: 3px; font-size: 14px; border: none; cursor: pointer; transition: background 0.2s; }
+        .btn-nav:hover { background-color: rgba(255,255,255,0.3); }
+        .btn-del-board:hover { background-color: #c00; }
+
+        /* Board Stats (Progress Bar) */
+        .board-stats { background: rgba(0,0,0,0.15); padding: 10px 20px; color: white; display: flex; align-items: center; gap: 15px; }
+        .main-progress-bar { width: 300px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 5px; overflow: hidden; }
         .main-progress-fill { height: 100%; background: #61bd4f; transition: width 0.5s; }
 
-        .board-container { display: flex; align-items: flex-start; overflow-x: auto; padding: 20px; height: 100%; box-sizing: border-box; }
-        .list { background: #ebecf0; border-radius: 3px; width: 300px; margin-right: 12px; padding: 10px; flex-shrink: 0; display: flex; flex-direction: column; max-height: 100%; }
-        .list-header { font-weight: bold; padding: 8px; font-size: 14px; }
-        .cards-container { overflow-y: auto; padding-right: 4px; }
+        .flash-container { padding: 10px 20px 0; }
+        .alert { padding: 10px; border-radius: 4px; display:flex; justify-content:space-between; margin-bottom: 5px; font-size: 14px; }
+        .alert-success { background: #d4edda; color: #155724; }
+        .alert-error { background: #f8d7da; color: #721c24; font-weight: bold; }
+
+        /* Board Container - MODIFIED for MASONRY LAYOUT (No Gaps) */
+        .board-container { 
+            display: block; /* Changed from flex to block for columns */
+            column-width: 300px; /* Creates responsive columns */
+            column-gap: 20px; /* Space between columns */
+            overflow-y: auto; 
+            padding: 20px; 
+            flex: 1; 
+            box-sizing: border-box;
+        }
         
+        /* List Styles - MODIFIED to fit inside columns */
+        .list { 
+            background-color: #ebecf0; 
+            border-radius: 3px; 
+            width: 100%; /* Fit to column width */
+            margin-bottom: 20px; /* Vertical spacing between lists */
+            padding: 10px; 
+            display: inline-block; /* Essential to prevent column breaking */
+            break-inside: avoid; /* Ensures a list isn't cut in half */
+            box-sizing: border-box;
+            vertical-align: top;
+        }
+        
+        /* List Header Editable */
+        .list-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; font-weight: bold; color: #172b4d; }
+        .list-title-form input { background: transparent; border: none; font-weight: bold; font-size: 14px; color: #172b4d; width: 180px; }
+        .list-title-form input:focus { background: white; outline: 2px solid #0079bf; padding: 2px; }
+        
+        .list-actions { display: flex; gap: 5px; }
+        .btn-list-action { background: none; border: none; color: #6b778c; cursor: pointer; font-size: 14px; }
+        .btn-list-action:hover { color: #172b4d; }
+        .btn-list-del:hover { color: red; }
+
+        .cards-container { 
+            /* Removed overflow-y to allow list to grow naturally in masonry layout */
+            min-height: 10px; 
+            padding-right: 0;
+        }
+
+        /* Card Styles */
         .card { background: white; border-radius: 3px; padding: 8px 10px; margin-bottom: 8px; box-shadow: 0 1px 0 rgba(9,30,66,.25); cursor: pointer; position: relative; }
         .card:hover { background: #f4f5f7; }
-        
         .completed-card { background-color: #f8f9fa; opacity: 0.7; }
         .completed-card .card-title { text-decoration: line-through; color: #6c757d; }
-        .done-badge { display: inline-block; background: #61bd4f; color: white; border-radius: 50%; width: 14px; height: 14px; text-align: center; line-height: 14px; font-size: 10px; margin-right: 6px; position: relative; top: -1px; }
-
+        
         .card-actions { position: absolute; top: 4px; right: 4px; display: none; gap: 4px; }
         .card:hover .card-actions { display: flex; }
-        .icon-btn { background: rgba(255,255,255,0.8); border: none; color: #6b778c; cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 3px; text-decoration: none; }
+        .icon-btn { background: rgba(255, 255, 255, 0.8); border: none; color: #6b778c; cursor: pointer; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 3px; text-decoration: none; font-size: 12px; }
         .icon-btn:hover { background: #ebecf0; color: #172b4d; }
-        
+        .btn-del:hover { color: #c00; background: #ffebeb; }
+
+        .card-title { font-weight: 500; padding-right: 45px; word-wrap: break-word; }
         .badges { margin-top: 6px; display: flex; gap: 5px; font-size: 11px; font-weight: 600; }
         .badge { padding: 2px 6px; border-radius: 3px; color: white; }
         .priority-Urgent { background: #eb5a46; } .priority-High { background: #ff9f1a; }
         .priority-Medium { background: #f2d600; color: #333; } .priority-Low { background: #61bd4f; }
         
         .meta { color: #5e6c84; font-size: 12px; margin-top: 8px; }
-        .fab-btn { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background: #0079bf; color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; text-decoration: none; font-size: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1000; }
         
-        /* Flash messages */
-        .flash-container { padding: 10px 20px 0; }
-        .alert { padding: 10px; border-radius: 4px; background: #d4edda; color: #155724; display:flex; justify-content:space-between; }
-        .alert-error { background: #f8d7da; color: #721c24; }
+        /* Add List Panel */
+        .add-list-panel { 
+            background: rgba(255,255,255,0.2); 
+            border-radius: 3px; 
+            width: 100%; /* Fit column */
+            padding: 10px; 
+            display: inline-block; /* Stack properly */
+            box-sizing: border-box;
+        }
+        .add-list-panel input { width: 100%; padding: 8px; border-radius: 3px; border: none; margin-bottom: 5px; box-sizing: border-box; }
+        .add-list-panel button { background: #5ba4cf; color: white; border: none; padding: 8px 12px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .add-list-panel button:hover { background: #026aa7; }
+
+        .add-card-link { color: #5e6c84; padding: 8px; margin-top: 5px; border-radius: 3px; cursor: pointer; text-decoration: none; display: block; }
+        .add-card-link:hover { background: rgba(9,30,66,.08); color: #172b4d; }
+        
+        .fab-btn { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background: #0079bf; color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; text-decoration: none; font-size: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1000; transition: transform 0.2s; }
+        .fab-btn:hover { transform: scale(1.1); background: #026aa7; }
     </style>
 </head>
 <body>
+
+    <!-- NAVBAR -->
     <div class="navbar">
-        <div style="display:flex; align-items:center; gap:15px;">
-            <span style="font-size:18px; font-weight:bold;">{{ current_board_name }}</span>
+        <div class="nav-left">
+            <!-- Form sửa tên Board trực tiếp -->
+            <form action="/edit_board/{{ current_board_id }}" method="POST" class="board-title-form">
+                <input type="text" name="name" value="{{ current_board_name }}" onchange="this.form.submit()" title="Click to rename board">
+            </form>
+
             <select class="board-select" onchange="location = this.value;">
                 {% for board in all_boards %}
                     <option value="/?board_id={{ board.BoardID }}" {% if board.BoardID == current_board_id %}selected{% endif %}>{{ board.Name }}</option>
                 {% endfor %}
             </select>
-            <a href="/create_board" class="new-board-btn">+ Board</a>
+            
+            <!-- Nút xóa Board -->
+            <form action="/delete_board/{{ current_board_id }}" method="POST" onsubmit="return confirm('Delete this board?');">
+                <button type="submit" class="btn-del-board" title="Delete current board">🗑</button>
+            </form>
+
+            <a href="/create_board" class="btn-nav">+ New Board</a>
         </div>
+        
         <div>
             {% if user_name %}<span style="font-size:14px; margin-right:15px;">👋 {{ user_name }}</span>{% endif %}
-            <a href="/logout" class="btn-nav">Logout</a>
+            <a href="/logout" class="btn-nav" style="background:rgba(0,0,0,0.2);">Logout</a>
         </div>
     </div>
 
+    <!-- NEW: GLOBAL BOARD PROGRESS BAR -->
     <div class="board-stats">
-        <div style="font-size: 13px;">Board Progress: <strong>{{ board_progress }}%</strong></div>
+        <div style="font-size: 14px; font-weight: bold;">Board Completion: {{ board_progress }}%</div>
         <div class="main-progress-bar">
             <div class="main-progress-fill" style="width: {{ board_progress }}%;"></div>
         </div>
     </div>
 
+    <!-- FLASH MESSAGES -->
     <div class="flash-container">
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
@@ -81,40 +161,68 @@
         {% endwith %}
     </div>
 
+    <!-- MAIN BOARD -->
     <div class="board-container">
-        {% for list_name, cards in lists.items() %}
+        
+        <!-- Vòng lặp Lists (Key bây giờ là tuple: id, title, limit) -->
+        {% for list_info, cards in lists.items() %}
         <div class="list">
-            <div class="list-header">{{ list_name }}</div>
+            <div class="list-header">
+                <!-- Form sửa tên List trực tiếp -->
+                <form action="/edit_list/{{ list_info[0] }}" method="POST" class="list-title-form">
+                    <input type="hidden" name="board_id" value="{{ current_board_id }}">
+                    <input type="text" name="title" value="{{ list_info[1] }}" onchange="this.form.submit()">
+                </form>
+                
+                <!-- Nút Xóa List -->
+                <div class="list-actions">
+                    <form action="/delete_list/{{ list_info[0] }}?board_id={{ current_board_id }}" method="POST" onsubmit="return confirm('Delete list?');">
+                        <button type="submit" class="btn-list-action btn-list-del">🗑</button>
+                    </form>
+                </div>
+            </div>
+
             <div class="cards-container">
                 {% for card in cards %}
                 <div class="card {% if card.is_completed %}completed-card{% endif %}">
                     <div class="card-actions">
                         <a href="/edit_card/{{ card.id }}" class="icon-btn">✎</a>
-                        <form action="/delete_card/{{ card.id }}?board_id={{ current_board_id }}" method="POST" onsubmit="return confirm('Xóa?');" style="margin:0;">
-                            <button type="submit" class="icon-btn" style="color:#c00;">×</button>
+                        <form action="/delete_card/{{ card.id }}?board_id={{ current_board_id }}" method="POST" onsubmit="return confirm('Delete?');" style="margin:0;">
+                            <button type="submit" class="icon-btn btn-del">×</button>
                         </form>
                     </div>
-                    <div style="font-weight:500; padding-right:50px;">
-                        {% if card.is_completed %}<span class="done-badge">✓</span>{% endif %}
-                        {{ card.title }}
-                    </div>
+                    <div class="card-title">{% if card.is_completed %}✓ {% endif %}{{ card.title }}</div>
                     <div class="badges"><span class="badge priority-{{ card.priority }}">{{ card.priority }}</span></div>
                     <div class="meta">
-                        {% if card.due_date %}📅 {{ card.due_date }}<br>{% endif %}
-                        👤 {{ card.assignees }}
+                        {% if card.progress > 0 %}
+                        <div style="display:flex; align-items:center; margin-bottom:2px;">
+                            <div class="progress-bar"><div class="progress-fill" style="width:{{ card.progress }}%;"></div></div>
+                            <span style="font-size:10px; color:#5ba4cf;">{{ card.progress|int }}%</span>
+                        </div>
+                        {% endif %}
+                        {% if card.due_date %}<span>📅 {{ card.due_date }}</span>{% endif %}
+                        <span>👤 {{ card.assignees }}</span>
                     </div>
                 </div>
                 {% endfor %}
             </div>
-            {% if list_name not in ['Completed', 'Done', 'Finished'] %}
-                <a href="/add?board_id={{ current_board_id }}" class="add-card-link">
-                    + Add a card
-                </a>
-            {% endif %}
             
+            <!-- Nút Add Card (Có ở mọi cột) -->
+            <a href="/add?board_id={{ current_board_id }}" class="add-card-link">+ Add a card</a>
         </div>
         {% endfor %}
+
+        <!-- Panel thêm List mới -->
+        <div class="add-list-panel">
+            <form action="/create_list" method="POST">
+                <input type="hidden" name="board_id" value="{{ current_board_id }}">
+                <input type="text" name="title" placeholder="+ Add another list" required>
+                <button type="submit">Add List</button>
+            </form>
+        </div>
+
     </div>
-    <a href="/add?board_id={{ current_board_id }}" class="fab-btn">+</a>
+    
+    <a href="/add?board_id={{ current_board_id }}" class="fab-btn" title="Add New Card">+</a>
 </body>
 </html>
