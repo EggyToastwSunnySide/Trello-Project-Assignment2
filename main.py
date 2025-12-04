@@ -59,6 +59,7 @@ def trello_board():
     lists_data = OrderedDict()
     all_boards = []
     current_board_name = "Unknown"
+    user_permission = "View"
     
     total_cards = 0; completed_cards = 0; board_progress = 0
     
@@ -68,6 +69,11 @@ def trello_board():
             all_boards = conn.execute(text("SELECT BoardID, Name FROM Board")).fetchall()
             name_res = conn.execute(text("SELECT Name FROM Board WHERE BoardID = :bid"), {"bid": board_id}).fetchone()
             if name_res: current_board_name = name_res[0]
+            
+            perm_res = conn.execute(text("SELECT Permission FROM Board_Member WHERE BoardID = :bid AND UserID = :uid"), 
+                                    {"bid": board_id, "uid": session['user_id']}).fetchone()
+            if perm_res:
+                user_permission = perm_res[0]
 
             # 2. Get LISTS Structure (To have IDs for Edit/Delete and show empty lists)
             lists_res = conn.execute(text("SELECT ListID, Title, CardLimit FROM Lists WHERE BoardID = :bid ORDER BY Position"), {"bid": board_id}).fetchall()
@@ -110,7 +116,8 @@ def trello_board():
     return render_template('board.html', 
                            lists=lists_data, all_boards=all_boards, 
                            current_board_id=board_id, current_board_name=current_board_name,
-                           user_name=session.get('user_name'), board_progress=board_progress)
+                           user_name=session.get('user_name'), board_progress=board_progress,
+                           user_permission=user_permission)
 
 # --- NEW: LIST MANAGEMENT ---
 @app.route('/create_list', methods=['POST'])
@@ -203,6 +210,7 @@ def add_card():
         except Exception as e:
             msg = str(e)
             if "reached its CardLimit" in msg: flash("⛔ Error: Card count exceeded in list!", "error")
+            elif "ACCESS DENIED" in msg: flash("⛔ Access Denied: You don't have permission to add a card to this list!", "error")
             else: flash(f"Error {msg}", "error")
             return redirect(url_for('trello_board', board_id=board_id))
 
@@ -247,28 +255,50 @@ def delete_card(card_id):
     board_id = request.args.get('board_id', 3)
     try:
         with db.connect() as conn:
-            conn.execute(text("CALL SP_Card_Delete(:cid)"), {"cid": card_id})
+            # SỬA: Truyền thêm :uid vào Procedure
+            conn.execute(text("CALL SP_Card_Delete(:cid, :uid)"), 
+                         {"cid": card_id, "uid": session['user_id']})
             conn.commit()
         flash("Card deleted successfully!", "success")
     except Exception as e:
         msg = str(e)
-        if "Cannot delete a COMPLETED card" in msg: flash("⛔ Error: Cannot delete a COMPLETED card!", "error")
-        else: flash(f"Error {msg}", "error")
+        if "ACCESS DENIED" in msg: flash("⛔ Access Denied: You don't have permission to delete this card!", "error")
+        elif "COMPLETED" in msg: flash("⛔ Error: This card is already completed!", "error")
+        else: flash(f"Lỗi: {msg}", "error")
     return redirect(url_for('trello_board', board_id=board_id))
 
 @app.route('/create_board', methods=['GET', 'POST'])
 def create_board():
     if 'user_id' not in session: return redirect(url_for('login'))
+    
+    # 1. KIỂM TRA GUEST (LOGIC MỚI)
+    try:
+        with db.connect() as conn:
+            # Kiểm tra xem ID này có nằm trong bảng GUEST không
+            is_guest = conn.execute(text("SELECT 1 FROM Guest WHERE UserID = :uid"), {"uid": session['user_id']}).fetchone()
+            
+            if is_guest:
+                flash("⛔ ACCESS DENIED: You don't have permission to create a new board!", "error")
+                return redirect(url_for('trello_board'))
+    except Exception as e:
+        flash(f"Lỗi kiểm tra quyền: {e}", "error")
+        return redirect(url_for('trello_board'))
+
+    # Logic cũ (nếu không phải Guest)
     if request.method == 'GET': return render_template('create_board.html')
     elif request.method == 'POST':
         try:
             with db.connect() as conn:
-                conn.execute(text("INSERT INTO Board (WorkspaceID, CreatedByUserID, Name, Visibility) VALUES (1, :uid, :name, :vis)"), {"uid": session['user_id'], "name": request.form['name'], "vis": request.form['visibility']})
+                conn.execute(text("INSERT INTO Board (WorkspaceID, CreatedByUserID, Name, Visibility) VALUES (1, :uid, :name, :vis)"), 
+                             {"uid": session['user_id'], "name": request.form['name'], "vis": request.form['visibility']})
                 new_bid = conn.execute(text("SELECT LAST_INSERT_ID()")).fetchone()[0]
                 conn.execute(text("INSERT INTO Lists (BoardID, Title, Position, CardLimit) VALUES (:bid, 'To Do', 1, 0), (:bid, 'Doing', 2, 5), (:bid, 'Done', 3, 0)"), {"bid": new_bid})
+                conn.execute(text("INSERT INTO Board_Member (BoardID, UserID, Permission) VALUES (:bid, :uid, 'Admin')"), {"bid": new_bid, "uid": session['user_id']})
                 conn.commit()
             return redirect(url_for('trello_board', board_id=new_bid))
-        except: return redirect(url_for('trello_board'))
+        except Exception as e: 
+            flash(f"Lỗi: {e}", "error")
+            return redirect(url_for('trello_board'))
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
