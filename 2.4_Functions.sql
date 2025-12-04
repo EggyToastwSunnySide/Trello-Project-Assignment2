@@ -1,3 +1,4 @@
+USE TrelloDB;
 DELIMITER //
 
 DROP FUNCTION IF EXISTS FUNC_Calculate_Completion_Rate;
