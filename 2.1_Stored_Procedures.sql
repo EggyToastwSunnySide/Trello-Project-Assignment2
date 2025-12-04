@@ -59,17 +59,14 @@ CREATE PROCEDURE SP_Card_Update(
     IN p_CardID INT,
     IN p_Title VARCHAR(200),
     IN p_Priority VARCHAR(20),
-    IN p_IsCompleted BOOLEAN
+    IN p_IsCompleted BOOLEAN,
+    IN p_ModifierID INT
 )
 BEGIN
     DECLARE v_UnfinishedItems INT;
 
     IF NOT EXISTS (SELECT 1 FROM Card WHERE CardID = p_CardID) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERROR: CardID not found.';
-    END IF;
-
-    IF p_Priority NOT IN ('Urgent', 'High', 'Medium', 'Low') THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERROR: Invalid Priority.';
     END IF;
 
     IF p_IsCompleted = TRUE THEN
@@ -84,8 +81,12 @@ BEGIN
     END IF;
 
     UPDATE Card
-    SET Title = p_Title, Priority = p_Priority, IsCompleted = p_IsCompleted
+    SET Title = p_Title, 
+        Priority = p_Priority, 
+        IsCompleted = p_IsCompleted,
+        LastModifiedByUserID = p_ModifierID
     WHERE CardID = p_CardID;
+    
     
     SELECT CONCAT('Card ', p_CardID, ' updated successfully') AS Message;
 END //

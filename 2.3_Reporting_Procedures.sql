@@ -13,9 +13,13 @@ BEGIN
         C.Title AS TaskName,
         C.Priority,
         C.DueDate,
-        IFNULL(GROUP_CONCAT(U.LastName SEPARATOR ', '), 'Unassigned') AS Assignees, -- 5
+        IFNULL(GROUP_CONCAT(DISTINCT U.LastName SEPARATOR ', '), 'Unassigned') AS Assignees, -- 5
         FUNC_Calculate_Completion_Rate(C.CardID) AS ProgressPercent, -- 6
-        C.IsCompleted
+        C.IsCompleted,
+        
+        DATE_FORMAT(C.LastModified, '%H:%i %d/%m') AS ModTime,
+        ModUser.LastName AS ModUser
+        
     FROM 
         Card C
     JOIN 
@@ -24,15 +28,17 @@ BEGIN
         Card_Member CM ON C.CardID = CM.CardID
     LEFT JOIN 
         Users U ON CM.UserID = U.UserID
+    
+    LEFT JOIN
+        Users ModUser ON C.LastModifiedByUserID = ModUser.UserID
+        
     WHERE 
         L.BoardID = p_BoardID 
         AND (p_IsCompleted IS NULL OR C.IsCompleted = p_IsCompleted)
     GROUP BY 
-        C.CardID, C.Title, C.Priority, C.DueDate, L.Title, L.Position, C.IsCompleted
+        C.CardID, C.Title, C.Priority, C.DueDate, L.Title, L.Position, C.IsCompleted, C.LastModified, ModUser.LastName
     ORDER BY 
-        L.Position ASC,
-        C.IsCompleted ASC,
-        C.Priority ASC;
+        L.Position ASC, C.Priority ASC;
 END //
 
 DROP PROCEDURE IF EXISTS SP_Report_UserWorkload;
